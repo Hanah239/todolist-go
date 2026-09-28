@@ -73,13 +73,28 @@ func main() {
 		log.Fatal(err)
 	}
 
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS todos (
+			id      INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			title   TEXT NOT NULL,
+			done    INTEGER NOT NULL DEFAULT 0
+		)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", register)
 	mux.HandleFunc("POST /login", login)
 	mux.HandleFunc("POST /logout", requireAuth(logout))
 	mux.HandleFunc("GET /me", requireAuth(whoami))
 	mux.HandleFunc("GET /admin/ping", requireAdmin(adminPing))
-
+	mux.HandleFunc("POST /todos", requireAuth(createTodo))
+	mux.HandleFunc("GET /todos", requireAuth(listTodos))
+	mux.HandleFunc("PUT /todos/{id}", requireAuth(updateTodo))
+	mux.HandleFunc("DELETE /todos/{id}", requireAuth(deleteTodo))
+	mux.HandleFunc("GET /admin/todos", requireAdmin(adminListTodos))
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
