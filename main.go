@@ -56,9 +56,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS sessions (
+			token      TEXT PRIMARY KEY,
+			user_id    INTEGER NOT NULL,
+			expires_at INTEGER NOT NULL
+		)`)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", register)
+	mux.HandleFunc("POST /login", login)
 
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
