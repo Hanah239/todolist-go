@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 
 	"golang.org/x/crypto/bcrypt"
 	_ "modernc.org/sqlite"
@@ -29,7 +30,12 @@ func register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = db.Exec("INSERT INTO users(email, password_hash) VALUES(?, ?)", in.Email, string(hash))
+	role := "user"
+	if in.Email == os.Getenv("ADMIN_EMAIL") {
+		role = "admin"
+	}
+	_, err = db.Exec("INSERT INTO users(email, password_hash, role) VALUES(?, ?, ?)", in.Email, string(hash), role)
+
 	if err != nil {
 		http.Error(w, "email already registered", http.StatusConflict)
 		return
@@ -51,7 +57,8 @@ func main() {
 		CREATE TABLE IF NOT EXISTS users (
 			id            INTEGER PRIMARY KEY AUTOINCREMENT,
 			email         TEXT UNIQUE NOT NULL,
-			password_hash TEXT NOT NULL
+			password_hash TEXT NOT NULL,
+			role          TEXT NOT NULL DEFAULT 'user'
 		)`)
 	if err != nil {
 		log.Fatal(err)
@@ -69,6 +76,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", register)
 	mux.HandleFunc("POST /login", login)
+	mux.HandleFunc("POST /logout", requireAuth(logout))
+	mux.HandleFunc("GET /me", requireAuth(whoami))
+	mux.HandleFunc("GET /admin/ping", requireAdmin(adminPing))
 
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
