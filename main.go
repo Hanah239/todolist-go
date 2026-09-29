@@ -84,6 +84,17 @@ func main() {
 		log.Fatal(err)
 	}
 
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS profiles (
+			user_id  INTEGER PRIMARY KEY,
+			name     TEXT NOT NULL DEFAULT '',
+			bio      TEXT NOT NULL DEFAULT '',
+			dp_url   TEXT NOT NULL DEFAULT ''
+		)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", register)
 	mux.HandleFunc("POST /login", login)
@@ -95,6 +106,9 @@ func main() {
 	mux.HandleFunc("PUT /todos/{id}", requireAuth(updateTodo))
 	mux.HandleFunc("DELETE /todos/{id}", requireAuth(deleteTodo))
 	mux.HandleFunc("GET /admin/todos", requireAdmin(adminListTodos))
+	mux.HandleFunc("GET /profile", requireAuth(getProfile))
+	mux.HandleFunc("PUT /profile", requireAuth(updateProfile))
+
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
