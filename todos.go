@@ -11,6 +11,7 @@ type Todo struct {
 	ID    int64  `json:"id"`
 	Title string `json:"title"`
 	Done  bool   `json:"done"`
+	Tags  []Tag  `json:"tags"`
 }
 
 func sendJSON(w http.ResponseWriter, status int, v any) {
@@ -51,9 +52,31 @@ func listTodos(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "server error", http.StatusInternalServerError)
 			return
 		}
+		t.Tags = tagsForTodo(t.ID)
 		todos = append(todos, t)
 	}
 	sendJSON(w, http.StatusOK, todos)
+}
+
+// Fetch all tags attached to one to-do, via the todo_tags junction table
+func tagsForTodo(todoID int64) []Tag {
+	rows, err := db.Query(`
+		SELECT t.id, t.name, t.color
+		FROM tags t
+		JOIN todo_tags tt ON tt.tag_id = t.id
+		WHERE tt.todo_id = ?`, todoID)
+	if err != nil {
+		return []Tag{}
+	}
+	defer rows.Close()
+
+	tags := []Tag{}
+	for rows.Next() {
+		var t Tag
+		rows.Scan(&t.ID, &t.Name, &t.Color)
+		tags = append(tags, t)
+	}
+	return tags
 }
 
 func updateTodo(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +145,8 @@ func adminListTodos(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "server error", http.StatusInternalServerError)
 			return
 		}
+
+		x.Tags = tagsForTodo(x.ID)
 		out = append(out, x)
 	}
 	sendJSON(w, http.StatusOK, out)
