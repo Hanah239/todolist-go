@@ -78,7 +78,7 @@ func main() {
 			id      INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER NOT NULL,
 			title   TEXT NOT NULL,
-			done    INTEGER NOT NULL DEFAULT 0
+			done    INTEGER NOT NULL DEFAULT 0,
 			priority TEXT NOT NULL DEFAULT 'medium',
 			due_date TEXT NOT NULL DEFAULT ''
 		)`)
