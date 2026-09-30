@@ -12,6 +12,7 @@ import (
 )
 
 var db *sql.DB
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
 func register(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -46,6 +47,10 @@ func register(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	if len(jwtSecret) == 0 {
+		log.Fatal("JWT_SECRET environment variable must be set")
+	}
+
 	var err error
 	db, err = sql.Open("sqlite", "app.db")
 	if err != nil {
@@ -59,15 +64,6 @@ func main() {
 			email         TEXT UNIQUE NOT NULL,
 			password_hash TEXT NOT NULL,
 			role          TEXT NOT NULL DEFAULT 'user'
-		)`)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS sessions (
-			token      TEXT PRIMARY KEY,
-			user_id    INTEGER NOT NULL,
-			expires_at INTEGER NOT NULL
 		)`)
 	if err != nil {
 		log.Fatal(err)
@@ -122,12 +118,10 @@ func main() {
 	mux.HandleFunc("POST /login", login)
 	mux.HandleFunc("POST /logout", requireAuth(logout))
 	mux.HandleFunc("GET /me", requireAuth(whoami))
-	mux.HandleFunc("GET /admin/ping", requireAdmin(adminPing))
 	mux.HandleFunc("POST /todos", requireAuth(createTodo))
 	mux.HandleFunc("GET /todos", requireAuth(listTodos))
 	mux.HandleFunc("PUT /todos/{id}", requireAuth(updateTodo))
 	mux.HandleFunc("DELETE /todos/{id}", requireAuth(deleteTodo))
-	mux.HandleFunc("GET /admin/todos", requireAdmin(adminListTodos))
 	mux.HandleFunc("GET /profile", requireAuth(getProfile))
 	mux.HandleFunc("PUT /profile", requireAuth(updateProfile))
 	mux.HandleFunc("GET /tags", requireAuth(listTags))

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 type Todo struct {
 	ID       int64  `json:"id"`
+	UserID   int64  `json:"user_id,omitempty"`
 	Title    string `json:"title"`
 	Done     bool   `json:"done"`
 	Priority string `json:"priority"`
@@ -74,21 +76,26 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, http.StatusCreated, Todo{ID: id, Title: in.Title, Priority: in.Priority, DueDate: in.DueDate, Tags: []Tag{}})
 }
 
+// Role-based: admin sees everyone's todos, a regular user sees only their own.
 func listTodos(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
 	tag := r.URL.Query().Get("tag")
 	search := r.URL.Query().Get("search")
+	isAdmin := user.Role == "admin"
 
-	query := `SELECT DISTINCT t.id, t.title, t.done, t.priority, t.due_date
-		FROM todos t`
+	query := `SELECT DISTINCT t.id, t.user_id, t.title, t.done, t.priority, t.due_date FROM todos t`
 	args := []any{}
 
 	if tag != "" {
-		query += ` JOIN todo_tags tt ON tt.todo_id = t.id
-			JOIN tags tg ON tg.id = tt.tag_id`
+		query += ` JOIN todo_tags tt ON tt.todo_id = t.id JOIN tags tg ON tg.id = tt.tag_id`
 	}
 
-	query += ` WHERE t.user_id = ?`
-	args = append(args, currentUser(r).ID)
+	if isAdmin {
+		query += ` WHERE 1=1`
+	} else {
+		query += ` WHERE t.user_id = ?`
+		args = append(args, user.ID)
+	}
 
 	if tag != "" {
 		query += ` AND tg.name = ?`
@@ -109,16 +116,20 @@ func listTodos(w http.ResponseWriter, r *http.Request) {
 	todos := []Todo{}
 	for rows.Next() {
 		var t Todo
-		if err := rows.Scan(&t.ID, &t.Title, &t.Done, &t.Priority, &t.DueDate); err != nil {
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Title, &t.Done, &t.Priority, &t.DueDate); err != nil {
 			http.Error(w, "server error", http.StatusInternalServerError)
 			return
 		}
 		t.Tags = tagsForTodo(t.ID)
+		if !isAdmin {
+			t.UserID = 0 // hide it for regular users, they know it's theirs
+		}
 		todos = append(todos, t)
 	}
 	sendJSON(w, http.StatusOK, todos)
 }
 
+// Role-based: admin can edit any todo, a regular user only their own.
 func updateTodo(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -143,8 +154,15 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := db.Exec("UPDATE todos SET title = ?, done = ?, priority = ?, due_date = ? WHERE id = ? AND user_id = ?",
-		in.Title, in.Done, in.Priority, in.DueDate, id, currentUser(r).ID)
+	user := currentUser(r)
+	var res sql.Result
+	if user.Role == "admin" {
+		res, err = db.Exec("UPDATE todos SET title = ?, done = ?, priority = ?, due_date = ? WHERE id = ?",
+			in.Title, in.Done, in.Priority, in.DueDate, id)
+	} else {
+		res, err = db.Exec("UPDATE todos SET title = ?, done = ?, priority = ?, due_date = ? WHERE id = ? AND user_id = ?",
+			in.Title, in.Done, in.Priority, in.DueDate, id, user.ID)
+	}
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
@@ -156,13 +174,21 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, http.StatusOK, Todo{ID: id, Title: in.Title, Done: in.Done, Priority: in.Priority, DueDate: in.DueDate, Tags: tagsForTodo(id)})
 }
 
+// Role-based: admin can delete any todo, a regular user only their own.
 func deleteTodo(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	res, err := db.Exec("DELETE FROM todos WHERE id = ? AND user_id = ?", id, currentUser(r).ID)
+
+	user := currentUser(r)
+	var res sql.Result
+	if user.Role == "admin" {
+		res, err = db.Exec("DELETE FROM todos WHERE id = ?", id)
+	} else {
+		res, err = db.Exec("DELETE FROM todos WHERE id = ? AND user_id = ?", id, user.ID)
+	}
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
@@ -172,29 +198,4 @@ func deleteTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func adminListTodos(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, user_id, title, done, priority, due_date FROM todos")
-	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	type row struct {
-		Todo
-		UserID int64 `json:"user_id"`
-	}
-	out := []row{}
-	for rows.Next() {
-		var x row
-		if err := rows.Scan(&x.ID, &x.UserID, &x.Title, &x.Done, &x.Priority, &x.DueDate); err != nil {
-			http.Error(w, "server error", http.StatusInternalServerError)
-			return
-		}
-		x.Tags = tagsForTodo(x.ID)
-		out = append(out, x)
-	}
-	sendJSON(w, http.StatusOK, out)
 }
