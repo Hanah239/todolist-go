@@ -22,7 +22,6 @@ func sendJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// Fetch all tags attached to one to-do, via the todo_tags junction table
 func tagsForTodo(todoID int64) []Tag {
 	rows, err := db.Query(`
 		SELECT t.id, t.name, t.color
@@ -151,7 +150,6 @@ func deleteTodo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Admin only: everyone's todos, with the owner's id.
 func adminListTodos(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id, user_id, title, done, priority, due_date FROM todos")
 	if err != nil {

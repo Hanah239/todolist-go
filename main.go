@@ -97,6 +97,26 @@ func main() {
 		log.Fatal(err)
 	}
 
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS tags (
+			id    INTEGER PRIMARY KEY AUTOINCREMENT,
+			name  TEXT UNIQUE NOT NULL,
+			color TEXT NOT NULL DEFAULT '#cccccc'
+		)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS todo_tags (
+			todo_id INTEGER NOT NULL,
+			tag_id  INTEGER NOT NULL,
+			PRIMARY KEY (todo_id, tag_id)
+		)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", register)
 	mux.HandleFunc("POST /login", login)
@@ -110,6 +130,9 @@ func main() {
 	mux.HandleFunc("GET /admin/todos", requireAdmin(adminListTodos))
 	mux.HandleFunc("GET /profile", requireAuth(getProfile))
 	mux.HandleFunc("PUT /profile", requireAuth(updateProfile))
+	mux.HandleFunc("GET /tags", requireAuth(listTags))
+	mux.HandleFunc("POST /todos/{id}/tags", requireAuth(addTagToTodo))
+	mux.HandleFunc("DELETE /todos/{id}/tags/{tagID}", requireAuth(removeTagFromTodo))
 
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
