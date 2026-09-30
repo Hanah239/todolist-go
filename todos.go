@@ -75,7 +75,31 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 }
 
 func listTodos(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, title, done, priority, due_date FROM todos WHERE user_id = ?", currentUser(r).ID)
+	tag := r.URL.Query().Get("tag")
+	search := r.URL.Query().Get("search")
+
+	query := `SELECT DISTINCT t.id, t.title, t.done, t.priority, t.due_date
+		FROM todos t`
+	args := []any{}
+
+	if tag != "" {
+		query += ` JOIN todo_tags tt ON tt.todo_id = t.id
+			JOIN tags tg ON tg.id = tt.tag_id`
+	}
+
+	query += ` WHERE t.user_id = ?`
+	args = append(args, currentUser(r).ID)
+
+	if tag != "" {
+		query += ` AND tg.name = ?`
+		args = append(args, tag)
+	}
+	if search != "" {
+		query += ` AND t.title LIKE ?`
+		args = append(args, "%"+search+"%")
+	}
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
