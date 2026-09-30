@@ -8,9 +8,12 @@ import (
 )
 
 type Todo struct {
-	ID    int64  `json:"id"`
-	Title string `json:"title"`
-	Done  bool   `json:"done"`
+	ID       int64  `json:"id"`
+	Title    string `json:"title"`
+	Done     bool   `json:"done"`
+	Priority string `json:"priority"`
+	DueDate  string `json:"due_date"`
+	Tags     []Tag  `json:"tags"`
 }
 
 func sendJSON(w http.ResponseWriter, status int, v any) {
@@ -19,25 +22,61 @@ func sendJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// Fetch all tags attached to one to-do, via the todo_tags junction table
+func tagsForTodo(todoID int64) []Tag {
+	rows, err := db.Query(`
+		SELECT t.id, t.name, t.color
+		FROM tags t
+		JOIN todo_tags tt ON tt.tag_id = t.id
+		WHERE tt.todo_id = ?`, todoID)
+	if err != nil {
+		return []Tag{}
+	}
+	defer rows.Close()
+
+	tags := []Tag{}
+	for rows.Next() {
+		var t Tag
+		rows.Scan(&t.ID, &t.Name, &t.Color)
+		tags = append(tags, t)
+	}
+	return tags
+}
+
+func validPriority(p string) bool {
+	return p == "low" || p == "medium" || p == "high"
+}
+
 func createTodo(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Title string `json:"title"`
+		Title    string `json:"title"`
+		Priority string `json:"priority"`
+		DueDate  string `json:"due_date"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Title) == "" {
 		http.Error(w, "title required", http.StatusBadRequest)
 		return
 	}
-	res, err := db.Exec("INSERT INTO todos(user_id, title) VALUES(?, ?)", currentUser(r).ID, in.Title)
+	if in.Priority == "" {
+		in.Priority = "medium"
+	}
+	if !validPriority(in.Priority) {
+		http.Error(w, "priority must be low, medium, or high", http.StatusBadRequest)
+		return
+	}
+
+	res, err := db.Exec("INSERT INTO todos(user_id, title, priority, due_date) VALUES(?, ?, ?, ?)",
+		currentUser(r).ID, in.Title, in.Priority, in.DueDate)
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
 	id, _ := res.LastInsertId()
-	sendJSON(w, http.StatusCreated, Todo{ID: id, Title: in.Title})
+	sendJSON(w, http.StatusCreated, Todo{ID: id, Title: in.Title, Priority: in.Priority, DueDate: in.DueDate, Tags: []Tag{}})
 }
 
 func listTodos(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, title, done FROM todos WHERE user_id = ?", currentUser(r).ID)
+	rows, err := db.Query("SELECT id, title, done, priority, due_date FROM todos WHERE user_id = ?", currentUser(r).ID)
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
@@ -47,10 +86,11 @@ func listTodos(w http.ResponseWriter, r *http.Request) {
 	todos := []Todo{}
 	for rows.Next() {
 		var t Todo
-		if err := rows.Scan(&t.ID, &t.Title, &t.Done); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Done, &t.Priority, &t.DueDate); err != nil {
 			http.Error(w, "server error", http.StatusInternalServerError)
 			return
 		}
+		t.Tags = tagsForTodo(t.ID)
 		todos = append(todos, t)
 	}
 	sendJSON(w, http.StatusOK, todos)
@@ -63,16 +103,25 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Title string `json:"title"`
-		Done  bool   `json:"done"`
+		Title    string `json:"title"`
+		Done     bool   `json:"done"`
+		Priority string `json:"priority"`
+		DueDate  string `json:"due_date"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Title) == "" {
 		http.Error(w, "title required", http.StatusBadRequest)
 		return
 	}
-	// "AND user_id = ?" is the authorization: you can only change YOUR rows.
-	res, err := db.Exec("UPDATE todos SET title = ?, done = ? WHERE id = ? AND user_id = ?",
-		in.Title, in.Done, id, currentUser(r).ID)
+	if in.Priority == "" {
+		in.Priority = "medium"
+	}
+	if !validPriority(in.Priority) {
+		http.Error(w, "priority must be low, medium, or high", http.StatusBadRequest)
+		return
+	}
+
+	res, err := db.Exec("UPDATE todos SET title = ?, done = ?, priority = ?, due_date = ? WHERE id = ? AND user_id = ?",
+		in.Title, in.Done, in.Priority, in.DueDate, id, currentUser(r).ID)
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
@@ -81,7 +130,7 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	sendJSON(w, http.StatusOK, Todo{ID: id, Title: in.Title, Done: in.Done})
+	sendJSON(w, http.StatusOK, Todo{ID: id, Title: in.Title, Done: in.Done, Priority: in.Priority, DueDate: in.DueDate, Tags: tagsForTodo(id)})
 }
 
 func deleteTodo(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +153,7 @@ func deleteTodo(w http.ResponseWriter, r *http.Request) {
 
 // Admin only: everyone's todos, with the owner's id.
 func adminListTodos(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, user_id, title, done FROM todos")
+	rows, err := db.Query("SELECT id, user_id, title, done, priority, due_date FROM todos")
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
@@ -118,10 +167,11 @@ func adminListTodos(w http.ResponseWriter, r *http.Request) {
 	out := []row{}
 	for rows.Next() {
 		var x row
-		if err := rows.Scan(&x.ID, &x.UserID, &x.Title, &x.Done); err != nil {
+		if err := rows.Scan(&x.ID, &x.UserID, &x.Title, &x.Done, &x.Priority, &x.DueDate); err != nil {
 			http.Error(w, "server error", http.StatusInternalServerError)
 			return
 		}
+		x.Tags = tagsForTodo(x.ID)
 		out = append(out, x)
 	}
 	sendJSON(w, http.StatusOK, out)

@@ -79,6 +79,8 @@ func main() {
 			user_id INTEGER NOT NULL,
 			title   TEXT NOT NULL,
 			done    INTEGER NOT NULL DEFAULT 0
+			priority TEXT NOT NULL DEFAULT 'medium',
+			due_date TEXT NOT NULL DEFAULT ''
 		)`)
 	if err != nil {
 		log.Fatal(err)
