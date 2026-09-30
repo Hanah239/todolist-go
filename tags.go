@@ -8,7 +8,7 @@ import (
 )
 
 type Tag struct {
-	ID    int64  `json:"id"`
+	ID    int64  `json:"tag_id"`
 	Name  string `json:"name"`
 	Color string `json:"color"`
 }
