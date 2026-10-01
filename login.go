@@ -1,12 +1,11 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -20,30 +19,27 @@ func login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the user and compare the typed password to the stored hash
 	var id int64
-	var hash string
-	err := db.QueryRow("SELECT id, password_hash FROM users WHERE email = ?", in.Email).Scan(&id, &hash)
+	var hash, role string
+	err := db.QueryRow("SELECT id, password_hash, role FROM users WHERE email = ?", in.Email).Scan(&id, &hash, &role)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil {
 		http.Error(w, "invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
-	// Make a random token and save it with an expiry time (24 hours)
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
-		return
+	// Build the JWT: user id, role, and a 12-hour expiry, all inside the token itself.
+	claims := jwt.MapClaims{
+		"user_id": id,
+		"role":    role,
+		"exp":     time.Now().Add(12 * time.Hour).Unix(),
 	}
-	token := hex.EncodeToString(b)
-	expires := time.Now().Add(24 * time.Hour).Unix()
-
-	_, err = db.Exec("INSERT INTO sessions(token, user_id, expires_at) VALUES(?, ?, ?)", token, id, expires)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString(jwtSecret)
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	json.NewEncoder(w).Encode(map[string]string{"token": signed})
 }

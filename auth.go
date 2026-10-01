@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type User struct {
@@ -24,16 +24,30 @@ func tokenFrom(r *http.Request) string {
 // The gatekeeper: runs BEFORE a handler and rejects requests without a valid token.
 func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var u User
-		err := db.QueryRow(`
-			SELECT u.id, u.role
-			FROM sessions s JOIN users u ON u.id = s.user_id
-			WHERE s.token = ? AND s.expires_at > ?`,
-			tokenFrom(r), time.Now().Unix()).Scan(&u.ID, &u.Role)
-		if err != nil {
+		tokenStr := tokenFrom(r)
+
+		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+			return jwtSecret, nil
+		})
+		if err != nil || !token.Valid {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		userIDFloat, ok1 := claims["user_id"].(float64)
+		role, ok2 := claims["role"].(string)
+		if !ok1 || !ok2 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		u := User{ID: int64(userIDFloat), Role: role}
 		ctx := context.WithValue(r.Context(), userKey, u)
 		next(w, r.WithContext(ctx))
 	}
@@ -43,28 +57,16 @@ func currentUser(r *http.Request) User {
 	return r.Context().Value(userKey).(User)
 }
 
-// A second gatekeeper on top of the first: also requires the admin role.
-func requireAdmin(next http.HandlerFunc) http.HandlerFunc {
-	return requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		if currentUser(r).Role != "admin" {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		next(w, r)
-	})
-}
-
 func whoami(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"id": u.ID, "role": u.Role})
 }
 
+// With JWT there's no server-side session to delete — the token stays
+// valid until it naturally expires (12 hours). Logging out here just
+// confirms the request was authenticated; the client should discard
+// the token on their end.
 func logout(w http.ResponseWriter, r *http.Request) {
-	db.Exec("DELETE FROM sessions WHERE token = ?", tokenFrom(r))
-	w.Write([]byte("logged out\n"))
-}
-
-func adminPing(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("hello, admin\n"))
+	w.Write([]byte("logged out (token remains valid until it expires)\n"))
 }
