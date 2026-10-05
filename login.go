@@ -15,7 +15,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		httpError(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
@@ -23,7 +23,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 	var hash, role string
 	err := db.QueryRow("SELECT id, password_hash, role FROM users WHERE email = ?", in.Email).Scan(&id, &hash, &role)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil {
-		http.Error(w, "invalid email or password", http.StatusUnauthorized)
+		httpError(w, "invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
@@ -36,7 +36,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString(jwtSecret)
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 

@@ -55,21 +55,21 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 		DueDate  string `json:"due_date"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Title) == "" {
-		http.Error(w, "title required", http.StatusBadRequest)
+		httpError(w, "title required", http.StatusBadRequest)
 		return
 	}
 	if in.Priority == "" {
 		in.Priority = "medium"
 	}
 	if !validPriority(in.Priority) {
-		http.Error(w, "priority must be low, medium, or high", http.StatusBadRequest)
+		httpError(w, "priority must be low, medium, or high", http.StatusBadRequest)
 		return
 	}
 
 	res, err := db.Exec("INSERT INTO todos(user_id, title, priority, due_date) VALUES(?, ?, ?, ?)",
 		currentUser(r).ID, in.Title, in.Priority, in.DueDate)
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 	id, _ := res.LastInsertId()
@@ -108,7 +108,7 @@ func listTodos(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -117,7 +117,7 @@ func listTodos(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t Todo
 		if err := rows.Scan(&t.ID, &t.UserID, &t.Title, &t.Done, &t.Priority, &t.DueDate); err != nil {
-			http.Error(w, "server error", http.StatusInternalServerError)
+			httpError(w, "server error", http.StatusInternalServerError)
 			return
 		}
 		t.Tags = tagsForTodo(t.ID)
@@ -133,7 +133,7 @@ func listTodos(w http.ResponseWriter, r *http.Request) {
 func updateTodo(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "bad id", http.StatusBadRequest)
+		httpError(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	var in struct {
@@ -143,14 +143,14 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 		DueDate  string `json:"due_date"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Title) == "" {
-		http.Error(w, "title required", http.StatusBadRequest)
+		httpError(w, "title required", http.StatusBadRequest)
 		return
 	}
 	if in.Priority == "" {
 		in.Priority = "medium"
 	}
 	if !validPriority(in.Priority) {
-		http.Error(w, "priority must be low, medium, or high", http.StatusBadRequest)
+		httpError(w, "priority must be low, medium, or high", http.StatusBadRequest)
 		return
 	}
 
@@ -164,11 +164,11 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 			in.Title, in.Done, in.Priority, in.DueDate, id, user.ID)
 	}
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, "not found", http.StatusNotFound)
+		httpError(w, "not found", http.StatusNotFound)
 		return
 	}
 	sendJSON(w, http.StatusOK, Todo{ID: id, Title: in.Title, Done: in.Done, Priority: in.Priority, DueDate: in.DueDate, Tags: tagsForTodo(id)})
@@ -178,7 +178,7 @@ func updateTodo(w http.ResponseWriter, r *http.Request) {
 func deleteTodo(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "bad id", http.StatusBadRequest)
+		httpError(w, "bad id", http.StatusBadRequest)
 		return
 	}
 
@@ -190,11 +190,11 @@ func deleteTodo(w http.ResponseWriter, r *http.Request) {
 		res, err = db.Exec("DELETE FROM todos WHERE id = ? AND user_id = ?", id, user.ID)
 	}
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, "not found", http.StatusNotFound)
+		httpError(w, "not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

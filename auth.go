@@ -30,20 +30,20 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return jwtSecret, nil
 		})
 		if err != nil || !token.Valid {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			httpError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			httpError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		userIDFloat, ok1 := claims["user_id"].(float64)
 		role, ok2 := claims["role"].(string)
 		if !ok1 || !ok2 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			httpError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -68,5 +68,6 @@ func whoami(w http.ResponseWriter, r *http.Request) {
 // confirms the request was authenticated; the client should discard
 // the token on their end.
 func logout(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("logged out (token remains valid until it expires)\n"))
+	sendJSON(w, http.StatusOK, map[string]string{"message": "logged out (token remains valid until it expires)"})
+
 }

@@ -21,13 +21,13 @@ func register(w http.ResponseWriter, r *http.Request) {
 	}
 	err := json.NewDecoder(r.Body).Decode(&in)
 	if err != nil || in.Email == "" || len(in.Password) < 8 {
-		http.Error(w, "email and a password of 8+ characters required", http.StatusBadRequest)
+		httpError(w, "email and a password of 8+ characters required", http.StatusBadRequest)
 		return
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -38,12 +38,11 @@ func register(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Exec("INSERT INTO users(email, password_hash, role) VALUES(?, ?, ?)", in.Email, string(hash), role)
 
 	if err != nil {
-		http.Error(w, "email already registered", http.StatusConflict)
+		httpError(w, "email already registered", http.StatusConflict)
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("registered\n"))
+	sendJSON(w, http.StatusCreated, map[string]string{"message": "registered"})
 }
 
 func main() {
