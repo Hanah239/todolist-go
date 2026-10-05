@@ -134,6 +134,7 @@ func main() {
 	mux.HandleFunc("GET /profile", requireAuth(getProfile))
 	mux.HandleFunc("PUT /profile", requireAuth(updateProfile))
 	mux.HandleFunc("PUT /change-password", requireAuth(changePassword))
+	mux.HandleFunc("POST /change-email", requireAuth(changeEmail))
 	mux.HandleFunc("GET /tags", requireAuth(listTags))
 	mux.HandleFunc("POST /todos/{id}/tags", requireAuth(addTagToTodo))
 	mux.HandleFunc("DELETE /todos/{id}/tags/{tagID}", requireAuth(removeTagFromTodo))
