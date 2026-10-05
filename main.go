@@ -111,6 +111,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS email_changes (
+			user_id    INTEGER PRIMARY KEY,
+			new_email  TEXT NOT NULL,
+			token_hash TEXT NOT NULL,
+			expires_at INTEGER NOT NULL
+		)`)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /register", register)
