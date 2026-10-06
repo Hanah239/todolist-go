@@ -3,8 +3,10 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/mail"
@@ -104,4 +106,70 @@ func changeEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sendJSON(w, http.StatusOK, map[string]string{"message": "verification link sent to the new email"})
+}
+func verifyEmail(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		httpError(w, "invalid or expired link", http.StatusBadRequest)
+		return
+	}
+
+	// One transaction: either everything below happens, or nothing does
+	tx, err := db.Begin()
+	if err != nil {
+		httpError(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback() // does nothing after a successful Commit
+
+	// 1. Find the pending change by the HASH of the token in the link
+	var userID, expires int64
+	var newEmail string
+	err = tx.QueryRow("SELECT user_id, new_email, expires_at FROM email_changes WHERE token_hash = ?",
+		hashToken(token)).Scan(&userID, &newEmail, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpError(w, "invalid or expired link", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		httpError(w, "server error", http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Expired? Remove it, and give the same message as "not found"
+	if time.Now().Unix() > expires {
+		tx.Exec("DELETE FROM email_changes WHERE user_id = ?", userID)
+		tx.Commit()
+		httpError(w, "invalid or expired link", http.StatusBadRequest)
+		return
+	}
+
+	// 3. Re-check the address is still free (someone may have registered it since)
+	var taken int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE email = ?", newEmail).Scan(&taken); err != nil {
+		httpError(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	if taken > 0 {
+		tx.Exec("DELETE FROM email_changes WHERE user_id = ?", userID)
+		tx.Commit()
+		httpError(w, "email already in use", http.StatusConflict)
+		return
+	}
+
+	// 4. Activate the new email, then delete the row so the link can't be reused
+	if _, err := tx.Exec("UPDATE users SET email = ? WHERE id = ?", newEmail, userID); err != nil {
+		httpError(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	if _, err := tx.Exec("DELETE FROM email_changes WHERE user_id = ?", userID); err != nil {
+		httpError(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpError(w, "server error", http.StatusInternalServerError)
+		return
+	}
+
+	sendJSON(w, http.StatusOK, map[string]string{"message": "email verified"})
 }
