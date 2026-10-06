@@ -3,3 +3,5 @@ app.db*
 postman/
 server
 todolist-go
+server.log
+run.sh
