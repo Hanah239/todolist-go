@@ -18,8 +18,9 @@ func changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the stored hash for the logged-in user (ID comes from the JWT)
-	var hash string
-	err := db.QueryRow("SELECT password_hash FROM users WHERE id = ?", currentUser(r).ID).Scan(&hash)
+	var hash, email string
+	err := db.QueryRow("SELECT password_hash, email FROM users WHERE id = ?", currentUser(r).ID).Scan(&hash, &email)
+
 	if err != nil {
 		httpError(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -53,6 +54,7 @@ func changePassword(w http.ResponseWriter, r *http.Request) {
 		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
+	notify(email, "Your password was changed", "The password on your account was just changed.\n\nIf this was you, no action is needed. If it wasn't, contact support immediately.")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "password changed successfully"})

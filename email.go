@@ -10,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"net/mail"
+	"net/smtp"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -23,11 +25,45 @@ func baseURL() string {
 	return "http://localhost:8080"
 }
 
-// DEV ONLY: prints the email to the terminal. To send real email later,
-// replace the body of this one function with SMTP code.
+// With SMTP_HOST set it sends through that server (Mailtrap in dev).
+// Without it, it just prints, so the app and your curl tests still work.
 func sendEmail(to, subject, body string) error {
-	log.Printf("[DEV EMAIL] to=%s subject=%q\n%s", to, subject, body)
-	return nil
+	host := os.Getenv("SMTP_HOST")
+	if host == "" {
+		log.Printf("[DEV EMAIL] to=%s subject=%q\n%s", to, subject, body)
+		return nil
+	}
+	if strings.ContainsAny(to+subject, "\r\n") {
+		return errors.New("invalid header value")
+	}
+	port := os.Getenv("SMTP_PORT")
+	if port == "" {
+		port = "2525"
+	}
+	from := os.Getenv("MAIL_FROM")
+	if from == "" {
+		from = "noreply@todolist.local"
+	}
+
+	msg := "From: " + from + "\r\n" +
+		"To: " + to + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"\r\n" + body + "\r\n"
+
+	auth := smtp.PlainAuth("", os.Getenv("SMTP_USER"), os.Getenv("SMTP_PASS"), host)
+	return smtp.SendMail(host+":"+port, auth, from, []string{to}, []byte(msg))
+}
+
+// For notices sent AFTER a change has already happened: a mail failure
+// shouldn't turn a successful change into an error, so just log it.
+func notify(to, subject, body string) {
+	go func() {
+		if err := sendEmail(to, subject, body); err != nil {
+			log.Printf("notification to %s failed: %v", to, err)
+		}
+	}()
 }
 
 func hashToken(token string) string {
@@ -157,6 +193,13 @@ func verifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// NEW (1): read the old address BEFORE it gets replaced
+	var oldEmail string
+	if err := tx.QueryRow("SELECT email FROM users WHERE id = ?", userID).Scan(&oldEmail); err != nil {
+		httpError(w, "server error", http.StatusInternalServerError)
+		return
+	}
+
 	// 4. Activate the new email, then delete the row so the link can't be reused
 	if _, err := tx.Exec("UPDATE users SET email = ? WHERE id = ?", newEmail, userID); err != nil {
 		httpError(w, "server error", http.StatusInternalServerError)
@@ -170,6 +213,7 @@ func verifyEmail(w http.ResponseWriter, r *http.Request) {
 		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
+	notify(oldEmail, "Your email address was changed", "The email on your account was changed to "+newEmail+".\n\nIf this wasn't you, contact support immediately.")
 
 	sendJSON(w, http.StatusOK, map[string]string{"message": "email verified"})
 }
