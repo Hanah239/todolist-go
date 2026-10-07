@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"strings"
@@ -59,8 +58,12 @@ func currentUser(r *http.Request) User {
 
 func whoami(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"id": u.ID, "role": u.Role})
+	var email string
+	if err := db.QueryRow("SELECT email FROM users WHERE id = ?", u.ID).Scan(&email); err != nil {
+		httpError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]any{"id": u.ID, "email": email, "role": u.Role})
 }
 
 // With JWT there's no server-side session to delete — the token stays
