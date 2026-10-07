@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"strings"
@@ -30,20 +29,20 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return jwtSecret, nil
 		})
 		if err != nil || !token.Valid {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			httpError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			httpError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		userIDFloat, ok1 := claims["user_id"].(float64)
 		role, ok2 := claims["role"].(string)
 		if !ok1 || !ok2 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			httpError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -59,8 +58,12 @@ func currentUser(r *http.Request) User {
 
 func whoami(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"id": u.ID, "role": u.Role})
+	var email string
+	if err := db.QueryRow("SELECT email FROM users WHERE id = ?", u.ID).Scan(&email); err != nil {
+		httpError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	sendJSON(w, http.StatusOK, map[string]any{"id": u.ID, "email": email, "role": u.Role})
 }
 
 // With JWT there's no server-side session to delete — the token stays
@@ -68,5 +71,6 @@ func whoami(w http.ResponseWriter, r *http.Request) {
 // confirms the request was authenticated; the client should discard
 // the token on their end.
 func logout(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("logged out (token remains valid until it expires)\n"))
+	sendJSON(w, http.StatusOK, map[string]string{"message": "logged out (token remains valid until it expires)"})
+
 }

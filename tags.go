@@ -17,7 +17,7 @@ type Tag struct {
 func listTags(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id, name, color FROM tags")
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -36,7 +36,7 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 func addTagToTodo(w http.ResponseWriter, r *http.Request) {
 	todoID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "bad id", http.StatusBadRequest)
+		httpError(w, "bad id", http.StatusBadRequest)
 		return
 	}
 
@@ -44,7 +44,7 @@ func addTagToTodo(w http.ResponseWriter, r *http.Request) {
 	var owner int64
 	err = db.QueryRow("SELECT user_id FROM todos WHERE id = ?", todoID).Scan(&owner)
 	if err != nil || owner != currentUser(r).ID {
-		http.Error(w, "not found", http.StatusNotFound)
+		httpError(w, "not found", http.StatusNotFound)
 		return
 	}
 
@@ -53,7 +53,7 @@ func addTagToTodo(w http.ResponseWriter, r *http.Request) {
 		Color string `json:"color"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Name) == "" {
-		http.Error(w, "tag name required", http.StatusBadRequest)
+		httpError(w, "tag name required", http.StatusBadRequest)
 		return
 	}
 	if in.Color == "" {
@@ -65,7 +65,7 @@ func addTagToTodo(w http.ResponseWriter, r *http.Request) {
 
 	var tagID int64
 	if err := db.QueryRow("SELECT id FROM tags WHERE name = ?", in.Name).Scan(&tagID); err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -80,14 +80,14 @@ func removeTagFromTodo(w http.ResponseWriter, r *http.Request) {
 	todoID, err1 := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	tagID, err2 := strconv.ParseInt(r.PathValue("tagID"), 10, 64)
 	if err1 != nil || err2 != nil {
-		http.Error(w, "bad id", http.StatusBadRequest)
+		httpError(w, "bad id", http.StatusBadRequest)
 		return
 	}
 
 	var owner int64
 	err := db.QueryRow("SELECT user_id FROM todos WHERE id = ?", todoID).Scan(&owner)
 	if err != nil || owner != currentUser(r).ID {
-		http.Error(w, "not found", http.StatusNotFound)
+		httpError(w, "not found", http.StatusNotFound)
 		return
 	}
 

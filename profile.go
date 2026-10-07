@@ -26,7 +26,7 @@ func getProfile(w http.ResponseWriter, r *http.Request) {
 func updateProfile(w http.ResponseWriter, r *http.Request) {
 	var in Profile
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		httpError(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
@@ -35,7 +35,7 @@ func updateProfile(w http.ResponseWriter, r *http.Request) {
 		ON CONFLICT(user_id) DO UPDATE SET name=excluded.name, bio=excluded.bio, dp_url=excluded.dp_url`,
 		currentUser(r).ID, in.Name, in.Bio, in.DPURL)
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		httpError(w, "server error", http.StatusInternalServerError)
 		return
 	}
 
